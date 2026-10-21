@@ -292,11 +292,16 @@ enum E_VEX_HUD_VALUE
     VHV_NAV_MARKET, VHV_NAV_FUEL, VHV_NAV_DIRECTION, VHV_WEAPON,
     VHV_COUNT
 };
-enum E_VEX_HUD_BAR { VHB_HEALTH, VHB_ARMOUR, VHB_XP, VHB_FUEL, VHB_COUNT };
+enum E_VEX_HUD_BAR { VHB_HEALTH, VHB_ARMOUR, VHB_XP, VHB_FUEL, VHB_SPEED, VHB_COUNT };
 
 new PlayerText:gVexHud[MAX_PLAYERS][VEX_HUD_MAX_ITEMS];
 new PlayerText:gVexHudValue[MAX_PLAYERS][VHV_COUNT];
 new PlayerText:gVexHudBar[MAX_PLAYERS][VHB_COUNT];
+new PlayerText:gVexHudToastBg[MAX_PLAYERS];
+new PlayerText:gVexHudToastAccent[MAX_PLAYERS];
+new PlayerText:gVexHudToastTitle[MAX_PLAYERS];
+new PlayerText:gVexHudToastBody[MAX_PLAYERS];
+new gVexHudToastTimer[MAX_PLAYERS], gVexHudToastSerial[MAX_PLAYERS];
 new gVexHudCount[MAX_PLAYERS], gVexHudMainCount[MAX_PLAYERS];
 new gVexHudCache[MAX_PLAYERS][VHV_COUNT][VEX_HUD_TEXT_SIZE];
 new gVexHudBarPercent[MAX_PLAYERS][VHB_COUNT];
@@ -348,8 +353,8 @@ new const gVexHudGlyph[VEX_HUD_FONT_COUNT][32] =
     {65,128,129,130,131,69,149,138,139,140,75,132,77,72,79,150,80,67,84,137,142,88,134,135,141,136,143,144,145,146,147,148},
     {65,128,129,130,131,69,132,136,133,134,75,135,77,72,79,140,80,67,143,89,129,88,137,141,142,138,144,145,146,147,148,149}
 };
-new const Float:gVexHudBarWidth[VHB_COUNT] = {62.0, 56.0, 130.0, 44.0};
-new const Float:gVexHudBarHeight[VHB_COUNT] = {3.0, 3.0, 2.0, 3.0};
+new const Float:gVexHudBarWidth[VHB_COUNT] = {62.0, 56.0, 130.0, 50.0, 76.0};
+new const Float:gVexHudBarHeight[VHB_COUNT] = {4.0, 4.0, 2.5, 3.0, 3.0};
 new gPoliceGarageDoorPickup;
 new gPoliceEntrancePickup;
 new gPoliceStashPickup;
@@ -580,6 +585,8 @@ forward UnstunPlayer(playerid);
 forward ReleaseJailedPlayer(playerid);
 forward RespawnFactionVehicle(vehicleid);
 forward RefreshVexHud(playerid);
+forward UpdateVexHud(playerid);
+forward VX_HideHudToast(playerid, serial);
 forward FinishFBIEnter(playerid);
 forward InterviewAnnouncement();
 forward PvpRespawn(playerid);
@@ -851,6 +858,123 @@ stock PlayerText:VexHudText(playerid, Float:x, Float:y, const text[], Float:sx, 
 
 // Store handles through variable indices: Pawn 3.2.3664 can incorrectly
 // override the PlayerText tag when an enum constant directly indexes an array.
+stock PlayerText:VX_HudToastRect(playerid, Float:x, Float:y, Float:w, Float:h, color)
+{
+    new PlayerText:td = CreatePlayerTextDraw(playerid, x, y, "LD_SPAC:white");
+    if (td == PlayerText:INVALID_TEXT_DRAW) return td;
+    PlayerTextDrawFont(playerid, td, 4);
+    PlayerTextDrawTextSize(playerid, td, w, h);
+    PlayerTextDrawColor(playerid, td, color);
+    PlayerTextDrawSetShadow(playerid, td, 0);
+    PlayerTextDrawSetOutline(playerid, td, 0);
+    PlayerTextDrawBackgroundColor(playerid, td, 0x00000000);
+    PlayerTextDrawSetSelectable(playerid, td, 0);
+    return td;
+}
+
+stock PlayerText:VX_HudToastText(playerid, Float:x, Float:y, const text[], Float:sx, Float:sy, color)
+{
+    new encoded[128];
+    VexHudEncode(playerid, text, encoded, sizeof encoded);
+    new PlayerText:td = CreatePlayerTextDraw(playerid, x, y, encoded);
+    if (td == PlayerText:INVALID_TEXT_DRAW) return td;
+    PlayerTextDrawFont(playerid, td, 1);
+    PlayerTextDrawLetterSize(playerid, td, sx, sy);
+    PlayerTextDrawColor(playerid, td, color);
+    PlayerTextDrawAlignment(playerid, td, 1);
+    PlayerTextDrawSetProportional(playerid, td, 1);
+    PlayerTextDrawSetShadow(playerid, td, 0);
+    PlayerTextDrawSetOutline(playerid, td, 0);
+    PlayerTextDrawBackgroundColor(playerid, td, 0x00000000);
+    PlayerTextDrawUseBox(playerid, td, 0);
+    PlayerTextDrawTextSize(playerid, td, 630.0, 0.0);
+    PlayerTextDrawSetSelectable(playerid, td, 0);
+    return td;
+}
+
+stock VX_CreateHudToast(playerid)
+{
+    gVexHudToastBg[playerid] = PlayerText:INVALID_TEXT_DRAW;
+    gVexHudToastAccent[playerid] = PlayerText:INVALID_TEXT_DRAW;
+    gVexHudToastTitle[playerid] = PlayerText:INVALID_TEXT_DRAW;
+    gVexHudToastBody[playerid] = PlayerText:INVALID_TEXT_DRAW;
+
+    // Notification card sits below the player card, away from the radar and crosshair.
+    gVexHudToastBg[playerid] = VX_HudToastRect(playerid, 453.0, 184.0, 183.0, 44.0, 0x0A111EFF);
+    gVexHudToastAccent[playerid] = VX_HudToastRect(playerid, 453.0, 184.0, 183.0, 1.5, VEX_HUD_ACCENT);
+    gVexHudToastTitle[playerid] = VX_HudToastText(playerid, 465.0, 190.0, "VEXORIUM", 0.145, 0.80, VEX_HUD_ACCENT);
+    gVexHudToastBody[playerid] = VX_HudToastText(playerid, 465.0, 207.0, "", 0.155, 0.90, VEX_HUD_WHITE);
+    if (gVexHudToastBg[playerid] == PlayerText:INVALID_TEXT_DRAW
+        || gVexHudToastAccent[playerid] == PlayerText:INVALID_TEXT_DRAW
+        || gVexHudToastTitle[playerid] == PlayerText:INVALID_TEXT_DRAW
+        || gVexHudToastBody[playerid] == PlayerText:INVALID_TEXT_DRAW) return 0;
+
+    PlayerTextDrawHide(playerid, gVexHudToastBg[playerid]);
+    PlayerTextDrawHide(playerid, gVexHudToastAccent[playerid]);
+    PlayerTextDrawHide(playerid, gVexHudToastTitle[playerid]);
+    PlayerTextDrawHide(playerid, gVexHudToastBody[playerid]);
+    return 1;
+}
+
+stock VX_HideHudToastNow(playerid)
+{
+    if (playerid < 0 || playerid >= MAX_PLAYERS) return 0;
+    if (gVexHudToastTimer[playerid])
+    {
+        KillTimer(gVexHudToastTimer[playerid]);
+        gVexHudToastTimer[playerid] = 0;
+    }
+    gVexHudToastSerial[playerid]++;
+    if (gVexHudToastBg[playerid] != PlayerText:INVALID_TEXT_DRAW) PlayerTextDrawHide(playerid, gVexHudToastBg[playerid]);
+    if (gVexHudToastAccent[playerid] != PlayerText:INVALID_TEXT_DRAW) PlayerTextDrawHide(playerid, gVexHudToastAccent[playerid]);
+    if (gVexHudToastTitle[playerid] != PlayerText:INVALID_TEXT_DRAW) PlayerTextDrawHide(playerid, gVexHudToastTitle[playerid]);
+    if (gVexHudToastBody[playerid] != PlayerText:INVALID_TEXT_DRAW) PlayerTextDrawHide(playerid, gVexHudToastBody[playerid]);
+    return 1;
+}
+
+stock VX_Notify(playerid, const title[], const message[], color = VEX_HUD_ACCENT)
+{
+    if (!IsPlayerConnected(playerid) || !gLogged[playerid] || !gVexHudEnabled[playerid]) return 0;
+    if (!gHudCreated[playerid] && !UpdateVexHud(playerid)) return 0;
+    if (gVexHudToastBg[playerid] == PlayerText:INVALID_TEXT_DRAW) return 0;
+
+    new titleText[40], bodyText[64], encoded[128];
+    format(titleText, sizeof titleText, "%s", title);
+    format(bodyText, sizeof bodyText, "%s", message);
+    if (strlen(titleText) > 22) titleText[22] = '\0';
+    if (strlen(bodyText) > 34) bodyText[34] = '\0';
+
+    VexHudEncode(playerid, titleText, encoded, sizeof encoded);
+    PlayerTextDrawSetString(playerid, gVexHudToastTitle[playerid], encoded);
+    VexHudEncode(playerid, bodyText, encoded, sizeof encoded);
+    PlayerTextDrawSetString(playerid, gVexHudToastBody[playerid], encoded);
+    PlayerTextDrawColor(playerid, gVexHudToastTitle[playerid], color);
+    PlayerTextDrawColor(playerid, gVexHudToastAccent[playerid], color);
+
+    if (gVexHudToastTimer[playerid]) KillTimer(gVexHudToastTimer[playerid]);
+    gVexHudToastSerial[playerid]++;
+    if (gVexHudToastSerial[playerid] < 1) gVexHudToastSerial[playerid] = 1;
+    gVexHudToastTimer[playerid] = SetTimerEx("VX_HideHudToast", 4200, false, "ii", playerid, gVexHudToastSerial[playerid]);
+
+    PlayerTextDrawShow(playerid, gVexHudToastBg[playerid]);
+    PlayerTextDrawShow(playerid, gVexHudToastAccent[playerid]);
+    PlayerTextDrawShow(playerid, gVexHudToastTitle[playerid]);
+    PlayerTextDrawShow(playerid, gVexHudToastBody[playerid]);
+    return 1;
+}
+
+public VX_HideHudToast(playerid, serial)
+{
+    if (playerid < 0 || playerid >= MAX_PLAYERS || serial != gVexHudToastSerial[playerid]) return 0;
+    gVexHudToastTimer[playerid] = 0;
+    if (!IsPlayerConnected(playerid)) return 1;
+    if (gVexHudToastBg[playerid] != PlayerText:INVALID_TEXT_DRAW) PlayerTextDrawHide(playerid, gVexHudToastBg[playerid]);
+    if (gVexHudToastAccent[playerid] != PlayerText:INVALID_TEXT_DRAW) PlayerTextDrawHide(playerid, gVexHudToastAccent[playerid]);
+    if (gVexHudToastTitle[playerid] != PlayerText:INVALID_TEXT_DRAW) PlayerTextDrawHide(playerid, gVexHudToastTitle[playerid]);
+    if (gVexHudToastBody[playerid] != PlayerText:INVALID_TEXT_DRAW) PlayerTextDrawHide(playerid, gVexHudToastBody[playerid]);
+    return 1;
+}
+
 stock VexHudStoreValue(playerid, E_VEX_HUD_VALUE:item, PlayerText:td)
 {
     gVexHudValue[playerid][item] = td;
@@ -891,13 +1015,15 @@ stock VexHudSetBar(playerid, E_VEX_HUD_BAR:bar, percent, color)
     gVexHudBarPercent[playerid][bar] = percent;
     gVexHudBarColor[playerid][bar] = color;
     // Geometry changes require re-showing that bar, not the entire interface.
-    if ((bar == VHB_FUEL && gVexHudCarShown[playerid]) || (bar != VHB_FUEL && gVexHudMainShown[playerid]))
+    if (((bar == VHB_FUEL || bar == VHB_SPEED) && gVexHudCarShown[playerid])
+        || ((bar != VHB_FUEL && bar != VHB_SPEED) && gVexHudMainShown[playerid]))
         PlayerTextDrawShow(playerid, gVexHudBar[playerid][bar]);
     return 1;
 }
 
 stock HideVexHud(playerid)
 {
+    VX_HideHudToastNow(playerid);
     if (gVexHudMainShown[playerid] || gVexHudCarShown[playerid])
         for (new i = 0; i < gVexHudCount[playerid]; i++)
             PlayerTextDrawHide(playerid, gVexHud[playerid][i]);
@@ -908,6 +1034,15 @@ stock HideVexHud(playerid)
 
 stock DestroyVexHud(playerid)
 {
+    VX_HideHudToastNow(playerid);
+    if (gVexHudToastBg[playerid] != PlayerText:INVALID_TEXT_DRAW) PlayerTextDrawDestroy(playerid, gVexHudToastBg[playerid]);
+    if (gVexHudToastAccent[playerid] != PlayerText:INVALID_TEXT_DRAW) PlayerTextDrawDestroy(playerid, gVexHudToastAccent[playerid]);
+    if (gVexHudToastTitle[playerid] != PlayerText:INVALID_TEXT_DRAW) PlayerTextDrawDestroy(playerid, gVexHudToastTitle[playerid]);
+    if (gVexHudToastBody[playerid] != PlayerText:INVALID_TEXT_DRAW) PlayerTextDrawDestroy(playerid, gVexHudToastBody[playerid]);
+    gVexHudToastBg[playerid] = PlayerText:INVALID_TEXT_DRAW;
+    gVexHudToastAccent[playerid] = PlayerText:INVALID_TEXT_DRAW;
+    gVexHudToastTitle[playerid] = PlayerText:INVALID_TEXT_DRAW;
+    gVexHudToastBody[playerid] = PlayerText:INVALID_TEXT_DRAW;
     for (new i = 0; i < gVexHudCount[playerid]; i++)
     {
         PlayerTextDrawDestroy(playerid, gVexHud[playerid][i]);
@@ -935,10 +1070,12 @@ stock CreateVexHud(playerid)
         gVexHudBarColor[playerid][E_VEX_HUD_BAR:i] = 0;
     }
 
-    // Opaque top-right cover for GTA stock money/weapon/health/wanted graphics.
-    // Lower-case wordmark avoids legacy fonts replacing V/R/U with Cyrillic.
-    VexHudRect(playerid, 465.0, 5.0, 171.0, 174.0, 0x0B1624FF);
-    VexHudRect(playerid, 465.0, 5.0, 171.0, 1.5, VEX_HUD_ACCENT);
+    // Premium dark player card: opaque enough to cover GTA stock counters cleanly.
+    // The brighter header and thin teal rails establish a consistent VEXORIUM theme.
+    VexHudRect(playerid, 465.0, 5.0, 171.0, 174.0, 0x0A111EFF);
+    VexHudRect(playerid, 465.0, 5.0, 171.0, 26.0, 0x142536FF);
+    VexHudRect(playerid, 465.0, 5.0, 171.0, 1.8, VEX_HUD_ACCENT);
+    VexHudRect(playerid, 465.0, 7.0, 2.0, 172.0, VEX_HUD_ACCENT);
     VexHudText(playerid, 486.0, 13.0, "vexorium", 0.310, 1.50, VEX_HUD_ACCENT, 1, 1);
     VexHudStoreValue(playerid, VHV_ID, VexHudText(playerid, 616.0, 16.0, "_", 0.150, 0.90, VEX_HUD_MUTED, 3, 3));
     VexHudStoreValue(playerid, VHV_NAME, VexHudText(playerid, 486.0, 30.0, "_", 0.170, 0.90, VEX_HUD_WHITE, 1, 1));
@@ -947,10 +1084,12 @@ stock CreateVexHud(playerid)
     VexHudText(playerid, 560.0, 47.0, "БРОНЯ", 0.140, 0.85, VEX_HUD_MUTED, 1, 1);
     VexHudStoreValue(playerid, VHV_HEALTH, VexHudText(playerid, 548.0, 45.0, "_", 0.185, 1.00, VEX_HUD_WHITE, 3, 3));
     VexHudStoreValue(playerid, VHV_ARMOUR, VexHudText(playerid, 616.0, 45.0, "_", 0.185, 1.00, VEX_HUD_WHITE, 3, 3));
-    VexHudRect(playerid, 486.0, 59.0, 62.0, 3.0, VEX_HUD_TRACK);
-    VexHudRect(playerid, 560.0, 59.0, 56.0, 3.0, VEX_HUD_TRACK);
-    VexHudStoreBar(playerid, VHB_HEALTH, VexHudRect(playerid, 486.0, 59.0, 62.0, 3.0, VEX_HUD_HEALTH));
-    VexHudStoreBar(playerid, VHB_ARMOUR, VexHudRect(playerid, 560.0, 59.0, 56.0, 3.0, VEX_HUD_ARMOUR));
+    VexHudRect(playerid, 486.0, 59.0, 62.0, 4.0, VEX_HUD_TRACK);
+    VexHudRect(playerid, 560.0, 59.0, 56.0, 4.0, VEX_HUD_TRACK);
+    VexHudStoreBar(playerid, VHB_HEALTH, VexHudRect(playerid, 486.0, 59.0, 62.0, 4.0, VEX_HUD_HEALTH));
+    VexHudStoreBar(playerid, VHB_ARMOUR, VexHudRect(playerid, 560.0, 59.0, 56.0, 4.0, VEX_HUD_ARMOUR));
+    VexHudRect(playerid, 482.0, 65.0, 138.0, 16.0, 0x111D2AFF);
+    VexHudRect(playerid, 482.0, 81.0, 138.0, 16.0, 0x0D1925FF);
     VexHudText(playerid, 486.0, 69.0, "НАЛИЧНЫЕ", 0.155, 0.90, VEX_HUD_MUTED, 1, 1);
     VexHudStoreValue(playerid, VHV_CASH, VexHudText(playerid, 616.0, 67.0, "_", 0.195, 1.10, VEX_HUD_ACCENT, 3, 3));
     VexHudText(playerid, 486.0, 85.0, "БАНК", 0.155, 0.90, VEX_HUD_MUTED, 1, 1);
@@ -992,21 +1131,25 @@ stock CreateVexHud(playerid)
     VexHudRect(playerid, 5.0, 436.0, 150.0, 1.0, 0x58E3BA80);
     gVexHudMainCount[playerid] = gVexHudCount[playerid];
 
-    // Vehicle panel: bottom right, shown for driver/passenger only.
-    VexHudRect(playerid, 478.0, 365.0, 146.0, 73.0, VEX_HUD_BG);
-    VexHudRect(playerid, 478.0, 365.0, 1.5, 73.0, VEX_HUD_ACCENT);
-    VexHudText(playerid, 486.0, 371.0, "СКОРОСТЬ", 0.160, 0.85, VEX_HUD_MUTED, 1, 1);
-    VexHudStoreValue(playerid, VHV_SPEED, VexHudText(playerid, 539.0, 382.0, "_", 0.430, 2.00, VEX_HUD_WHITE, 3, 3));
-    VexHudText(playerid, 543.0, 394.0, "КМ/Ч", 0.125, 0.75, VEX_HUD_MUTED, 1, 1);
-    VexHudText(playerid, 572.0, 371.0, "ТОПЛИВО", 0.140, 0.85, VEX_HUD_MUTED, 1, 1);
-    VexHudStoreValue(playerid, VHV_FUEL, VexHudText(playerid, 616.0, 383.0, "_", 0.225, 1.30, VEX_HUD_WHITE, 3, 3));
-    VexHudRect(playerid, 572.0, 401.0, 44.0, 3.0, VEX_HUD_TRACK);
-    VexHudStoreBar(playerid, VHB_FUEL, VexHudRect(playerid, 572.0, 401.0, 44.0, 3.0, VEX_HUD_ACCENT));
-    VexHudStoreValue(playerid, VHV_ENGINE, VexHudText(playerid, 486.0, 409.0, "_", 0.145, 0.85, VEX_HUD_WHITE, 1, 1));
-    VexHudStoreValue(playerid, VHV_LOCK, VexHudText(playerid, 616.0, 409.0, "_", 0.140, 0.85, VEX_HUD_MUTED, 3, 1));
-    VexHudText(playerid, 486.0, 426.0, "КУЗОВ", 0.140, 0.80, VEX_HUD_MUTED, 1, 1);
-    VexHudStoreValue(playerid, VHV_BODY, VexHudText(playerid, 540.0, 424.0, "_", 0.170, 0.95, VEX_HUD_WHITE, 3, 3));
-    VexHudText(playerid, 616.0, 426.0, "n - ДВИГАТЕЛЬ", 0.120, 0.75, VEX_HUD_MUTED, 3, 1);
+    // VEX DRIVE card: a clear live speed readout, speed-limit gauge, fuel and vehicle state.
+    VexHudRect(playerid, 472.0, 358.0, 164.0, 80.0, 0x0A111EFF);
+    VexHudRect(playerid, 472.0, 358.0, 164.0, 21.0, 0x142536FF);
+    VexHudRect(playerid, 472.0, 358.0, 164.0, 1.8, VEX_HUD_ACCENT);
+    VexHudRect(playerid, 472.0, 358.0, 2.0, 80.0, VEX_HUD_ACCENT);
+    VexHudText(playerid, 483.0, 363.0, "VEX DRIVE", 0.175, 0.95, VEX_HUD_ACCENT, 1, 1);
+    VexHudStoreValue(playerid, VHV_SPEED, VexHudText(playerid, 483.0, 381.0, "_", 0.430, 2.00, VEX_HUD_WHITE, 1, 1));
+    VexHudText(playerid, 540.0, 394.0, "КМ/Ч", 0.125, 0.75, VEX_HUD_MUTED, 1, 1);
+    VexHudText(playerid, 574.0, 380.0, "ТОПЛИВО", 0.125, 0.75, VEX_HUD_MUTED, 1, 1);
+    VexHudStoreValue(playerid, VHV_FUEL, VexHudText(playerid, 624.0, 389.0, "_", 0.190, 1.05, VEX_HUD_WHITE, 3, 3));
+    VexHudRect(playerid, 574.0, 405.0, 50.0, 3.0, VEX_HUD_TRACK);
+    VexHudStoreBar(playerid, VHB_FUEL, VexHudRect(playerid, 574.0, 405.0, 50.0, 3.0, VEX_HUD_ACCENT));
+    VexHudRect(playerid, 483.0, 405.0, 76.0, 3.0, VEX_HUD_TRACK);
+    VexHudStoreBar(playerid, VHB_SPEED, VexHudRect(playerid, 483.0, 405.0, 76.0, 3.0, VEX_HUD_ACCENT));
+    VexHudStoreValue(playerid, VHV_ENGINE, VexHudText(playerid, 483.0, 414.0, "_", 0.135, 0.80, VEX_HUD_WHITE, 1, 1));
+    VexHudStoreValue(playerid, VHV_LOCK, VexHudText(playerid, 624.0, 414.0, "_", 0.125, 0.75, VEX_HUD_MUTED, 3, 1));
+    VexHudText(playerid, 483.0, 429.0, "КУЗОВ", 0.130, 0.75, VEX_HUD_MUTED, 1, 1);
+    VexHudStoreValue(playerid, VHV_BODY, VexHudText(playerid, 536.0, 427.0, "_", 0.155, 0.85, VEX_HUD_WHITE, 3, 3));
+    if (!VX_CreateHudToast(playerid)) gVexHudBuildFailed[playerid] = true;
 
     if (gVexHudBuildFailed[playerid])
     {
@@ -1189,6 +1332,11 @@ stock UpdateVexHud(playerid)
     new Float:speedScale = VX_VehicleSpeedScale(vehicleid);
     new speed = VexHudClamp(floatround(floatsqroot(vx * vx + vy * vy + vz * vz) * speedScale), 0, 999);
     format(text, sizeof text, "%03d", speed); VexHudSetValue(playerid, VHV_SPEED, text);
+    new speedGaugeMax = VX_VehicleSpeedLimitKmh(vehicleid);
+    if (speedGaugeMax <= 0) speedGaugeMax = 250;
+    new speedGaugePercent = VexHudClamp(speed * 100 / speedGaugeMax, 0, 100);
+    new speedGaugeColor = (speedGaugePercent >= 90) ? VEX_HUD_WARNING : VEX_HUD_ACCENT;
+    VexHudSetBar(playerid, VHB_SPEED, speedGaugePercent, speedGaugeColor);
     new fuel = VexHudClamp(gVehicleFuel[vehicleid], 0, 100);
     if (fuel <= 15) format(text, sizeof text, "~r~%d%%", fuel);
     else format(text, sizeof text, "%d%%", fuel);
@@ -1298,6 +1446,9 @@ stock GiveCash(playerid, amount)
     ResetPlayerMoney(playerid);
     GivePlayerMoney(playerid, gMoney[playerid]);
     UpdateVexHud(playerid);
+    new toastText[48];
+    format(toastText, sizeof toastText, "+%d руб. наличными", amount);
+    VX_Notify(playerid, "ЗАЧИСЛЕНО", toastText, VEX_HUD_ACCENT);
     return 1;
 }
 
@@ -1308,6 +1459,9 @@ stock TakeCash(playerid, amount)
     ResetPlayerMoney(playerid);
     GivePlayerMoney(playerid, gMoney[playerid]);
     UpdateVexHud(playerid);
+    new toastText[48];
+    format(toastText, sizeof toastText, "-%d руб. наличными", amount);
+    VX_Notify(playerid, "ОПЛАТА", toastText, VEX_HUD_WARNING);
     return 1;
 }
 
@@ -1539,6 +1693,7 @@ stock VX_ClothesBuy(playerid,index)
     UpdateVexHud(playerid);
     new msg[128];format(msg,sizeof msg,"[ОДЕЖДА] Куплен стиль «%s» за %d руб. Скин %d сохранён.",gVXClothesLabel[index],price,skin);
     SendClientMessage(playerid,COLOR_GREEN,msg);
+    VX_Notify(playerid, "ПОКУПКА", "Новый образ сохранён", VEX_HUD_ACCENT);
     return 1;
 }
 
@@ -2836,8 +2991,8 @@ public RefreshNearbyMapVisibility()
 
 public OnGameModeInit()
 {
-    print("[VEXORIUM HUD 2.2] Cache fix / compact layout / 9 font profiles loaded.");
-    print("[VEXORIUM HUD RU 2.0] Native textdraw HUD; /hudfont; CP1251 source.");
+    print("[VEXORIUM HUD 3.0] Player card refresh, VEX DRIVE speed gauge and timed notifications loaded.");
+    print("[VEXORIUM HUD RU 3.0] Native textdraw HUD; /hudfont; toast notifications; CP1251 source.");
     SetGameModeText("VEXORIUM RP | Русский RolePlay");
     // NPC-помощники на основных работах новичков (SA-MP 0.3.7+).
     CreateActor(16, 820.0, 856.0, 12.0, 90.0);
@@ -3139,10 +3294,14 @@ public PayDay()
         new msg[192];
         format(msg, sizeof msg, "[PayDay] Выплата: %d руб. | Опыт: +%d (всего %d/%d).", salary, multiplier, gExperience[playerid], GetExperienceForLevel(gLevel[playerid] + 1));
         SendClientMessage(playerid, COLOR_GREEN, msg);
+        new paydayToast[64];
+        format(paydayToast, sizeof paydayToast, "+%d руб. | +%d XP", salary, multiplier);
+        VX_Notify(playerid, "PAYDAY", paydayToast, VEX_HUD_ACCENT);
         if (gLevel[playerid] > oldLevel)
         {
             format(msg, sizeof msg, "[VEXORIUM] Поздравляем! Ваш уровень повышен до %d!", gLevel[playerid]);
             SendClientMessage(playerid, COLOR_YELLOW, msg);
+            VX_Notify(playerid, "НОВЫЙ УРОВЕНЬ", "Поздравляем с повышением!", VEX_HUD_WARNING);
             RefreshVexHud(playerid);
         }
         SavePlayer(playerid);
@@ -3310,6 +3469,12 @@ public OnPlayerConnect(playerid)
     gAdmin[playerid] = 0;
     if (gHudTimer[playerid]) KillTimer(gHudTimer[playerid]);
     gHudTimer[playerid] = 0;
+    gVexHudToastBg[playerid] = PlayerText:INVALID_TEXT_DRAW;
+    gVexHudToastAccent[playerid] = PlayerText:INVALID_TEXT_DRAW;
+    gVexHudToastTitle[playerid] = PlayerText:INVALID_TEXT_DRAW;
+    gVexHudToastBody[playerid] = PlayerText:INVALID_TEXT_DRAW;
+    gVexHudToastTimer[playerid] = 0;
+    gVexHudToastSerial[playerid] = 0;
     DestroyVexHud(playerid);
     gGang[playerid] = 0; // New accounts must not inherit the previous occupant's gang.
     gVexHudEnabled[playerid] = true;
@@ -6714,8 +6879,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
     }
     if (CommandMatch(cmdtext, "/goto"))
     {
-new params[48], token[24], targetid;
-new Float:x, Float:y, Float:z;
+        new params[48],token[24],targetid;Float:x,Float:y,Float:z;
         if(gAdmin[playerid]<1) return SendClientMessage(playerid,COLOR_RED,"Телепортация доступна администрации."),1;
         if(gVXSpec[playerid]!=INVALID_PLAYER_ID) return SendClientMessage(playerid,COLOR_YELLOW,"Сначала завершите /specoff."),1;
         GetParams(cmdtext,params,sizeof params);
@@ -6727,8 +6891,7 @@ new Float:x, Float:y, Float:z;
     }
     if (CommandMatch(cmdtext, "/gethere"))
     {
-      new params[48], token[24], targetid;
-         new Float:x, Float:y, Float:z;
+        new params[48],token[24],targetid;Float:x,Float:y,Float:z;
         if(gAdmin[playerid]<3) return SendClientMessage(playerid,COLOR_RED,"/gethere доступна с 3 уровня администрации."),1;
         GetParams(cmdtext,params,sizeof params);
         if(!GetToken(params,0,token,sizeof token)) return SendClientMessage(playerid,COLOR_YELLOW,"Использование: /gethere ID"),1;
@@ -8443,8 +8606,10 @@ stock VX_ContractCreate(playerid, targetid, amount, const purpose[])
     new msg[192];
     format(msg, sizeof msg, "Договор #%d создан: %d руб. Назначение: %s. Деньги удерживаются до решения второй стороны.", contractId, amount, purpose);
     SendClientMessage(playerid, COLOR_GREEN, msg);
+    VX_Notify(playerid, "ДОГОВОР СОЗДАН", "Средства удерживаются до ответа", VEX_HUD_ACCENT);
     format(msg, sizeof msg, "Игрок %s предлагает договор #%d на %d руб. Назначение: %s. Принять: /contractaccept %d, отказ: /contractreject %d", gName[playerid], contractId, amount, purpose, contractId, contractId);
     SendClientMessage(targetid, COLOR_YELLOW, msg);
+    VX_Notify(targetid, "НОВЫЙ ДОГОВОР", "Откройте список: /contracts", VEX_HUD_WARNING);
     return 1;
 }
 stock VX_ContractList(playerid)
@@ -10910,6 +11075,7 @@ stock RP_Engine(playerid)
     if(e==VEHICLE_PARAMS_ON)
     {
         SetVehicleParamsEx(v,0,l,a,d,b,t,o);
+        VX_Notify(playerid, "VEX DRIVE", "Двигатель выключен", VEX_HUD_WARNING);
         return RP_Message(playerid,"Двигатель выключен.");
     }
     if(!RP_HasKeys(playerid,v)) return RP_Message(playerid,"У вас нет ключей от этой машины.");
@@ -10917,6 +11083,7 @@ stock RP_Engine(playerid)
     GetVehicleHealth(v,hp);
     if(hp<350.0) return RP_Message(playerid,"Двигатель слишком повреждён. Нужен ремонт.");
     SetVehicleParamsEx(v,1,l,a,d,b,t,o); UpdateVexHud(playerid);
+    VX_Notify(playerid, "VEX DRIVE", "Двигатель заведён", VEX_HUD_ACCENT);
     return RP_Message(playerid,"Двигатель заведён.");
 }
 stock RP_Lock(playerid)

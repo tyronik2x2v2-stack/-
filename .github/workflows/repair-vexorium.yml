@@ -1,0 +1,40 @@
+name: Repair VEXORIUM source without changing its encoding
+
+on:
+  push:
+    paths:
+      - ".github/workflows/repair-vexorium.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out complete repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Repair Pawn source byte-for-byte
+        run: python3 tools/fix_vexorium.py
+
+      - name: Commit repaired source to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add vexorium.pwn
+          git commit -m "Restore CP1251 source, add two open.mp NPCs and anti-cheat"
+          git push origin HEAD:main
+
+      - name: Package files for direct download
+        uses: actions/upload-artifact@v4
+        with:
+          name: vexorium-pwn-source
+          path: |
+            vexorium.pwn
+            NPC_HOST_SETUP.txt
+          if-no-files-found: error
+          retention-days: 90

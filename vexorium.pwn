@@ -78,6 +78,8 @@ new gLastRestTick[MAX_PLAYERS];
 new gRepairKits[MAX_PLAYERS];
 new gSimCards[MAX_PLAYERS];
 new gLockpicks[MAX_PLAYERS];
+new gVXACSpeedStrikes[MAX_PLAYERS];
+new gVXACLastAlert[MAX_PLAYERS];
 forward Float:VX_VehicleSpeedScale(vehicleid);
 new bool:gCarjackPursuitNotified[MAX_PLAYERS];
 new gPhoneSmsTarget[MAX_PLAYERS];
@@ -3276,6 +3278,7 @@ public OnGameModeInit()
         }
     }
     print("[VEXORIUM RP] SQLite accounts ready.");
+    print("[VEXORIUM AC] Server-side movement and stat checks loaded.");
     print("[VEXORIUM RP] GPS, jobs, mining, 6 factions, rank uniforms and admin commands loaded.");
     SetTimer("PayDay", 40 * 60 * 1000, true);
     SetTimer("RefreshCarjackPursuits", 5000, true);
@@ -3467,6 +3470,8 @@ public OnPlayerConnect(playerid)
     VX_Connect(playerid);
     VX4_PlayerConnect(playerid);
     RP_Reset(playerid);
+    gVXACSpeedStrikes[playerid] = 0;
+    gVXACLastAlert[playerid] = 0;
     gFBIPendingEnter[playerid] = false;
     gLastTeleportTick[playerid] = 0;
     gMarketInside[playerid] = false;
@@ -3593,6 +3598,8 @@ public OnPlayerConnect(playerid)
 public OnPlayerDisconnect(playerid, reason)
 {
     gHousePending[playerid] = 0;
+    gVXACSpeedStrikes[playerid] = 0;
+    gVXACLastAlert[playerid] = 0;
 
     VX_TaxiDisconnect(playerid);
     VX4_PlayerDisconnect(playerid);
@@ -10064,6 +10071,69 @@ public VX_CuffFollowTick()
     return 1;
 }
 
+stock VX_ACReport(playerid, const reason[])
+{
+    new now = gettime();
+    if (gVXACLastAlert[playerid] > 0 && now - gVXACLastAlert[playerid] < 10) return 0;
+    gVXACLastAlert[playerid] = now;
+    new playerName[MAX_PLAYER_NAME + 1], message[160];
+    GetPlayerName(playerid, playerName, sizeof playerName);
+    format(message, sizeof message, "[VEX AC] %s (ID %d): %s", playerName, playerid, reason);
+    print(message);
+    for (new admin = 0; admin < MAX_PLAYERS; admin++)
+    {
+        if (IsPlayerConnected(admin) && gAdmin[admin] > 0)
+            SendClientMessage(admin, COLOR_RED, message);
+    }
+    return 1;
+}
+
+stock VX_AntiCheatCheck(playerid)
+{
+    if (!gLogged[playerid] || !gRPLoaded[playerid] || gAdmin[playerid] > 0 || IsPlayerNPC(playerid))
+        return 0;
+
+    new Float:health, Float:armour;
+    GetPlayerHealth(playerid, health);
+    GetPlayerArmour(playerid, armour);
+    if (health > 100.5)
+    {
+        SetPlayerHealth(playerid, 100.0);
+        VX_ACReport(playerid, "health value exceeded 100");
+    }
+    if (armour > 100.5)
+    {
+        SetPlayerArmour(playerid, 100.0);
+        VX_ACReport(playerid, "armour value exceeded 100");
+    }
+
+    if (GetPlayerState(playerid) != PLAYER_STATE_ONFOOT || gIsJailed[playerid]
+        || gHandcuffed[playerid] || gTaserStunned[playerid] || gVXHospital[playerid]
+        || gVXSpec[playerid] != INVALID_PLAYER_ID || gFBIEditActive[playerid])
+    {
+        gVXACSpeedStrikes[playerid] = 0;
+        return 1;
+    }
+
+    new Float:velX, Float:velY, Float:velZ;
+    GetPlayerVelocity(playerid, velX, velY, velZ);
+    new Float:horizontalSpeed = floatsqroot(velX * velX + velY * velY);
+    if (horizontalSpeed > 0.65)
+    {
+        if (gVXACSpeedStrikes[playerid] < 4) gVXACSpeedStrikes[playerid]++;
+    }
+    else if (gVXACSpeedStrikes[playerid] > 0)
+    {
+        gVXACSpeedStrikes[playerid]--;
+    }
+    if (gVXACSpeedStrikes[playerid] >= 4)
+    {
+        gVXACSpeedStrikes[playerid] = 0;
+        VX_ACReport(playerid, "repeated abnormal on-foot movement speed");
+    }
+    return 1;
+}
+
 public VX_Tick()
 {
     new now=gettime(),elapsed=VexHudClamp(now-gVXLastTick,0,5);gVXLastTick=now;
@@ -10072,6 +10142,7 @@ public VX_Tick()
     for(new p=0;p<MAX_PLAYERS;p++)
     {
         if(!VX_Valid(p))continue;
+        VX_AntiCheatCheck(p);
         VX_DecayWanted(p);
         VX_WardSafety(p);
         if(gVXSpec[p]!=INVALID_PLAYER_ID)

@@ -6961,7 +6961,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
     }
     if (CommandMatch(cmdtext, "/goto"))
     {
-        new params[48],token[24],targetid;Float:x,Float:y,Float:z;
+        new params[48],token[24],targetid; new Float:x,Float:y,Float:z;
         if(gAdmin[playerid]<1) return SendClientMessage(playerid,COLOR_RED,"������������ �������� �������������."),1;
         if(gVXSpec[playerid]!=INVALID_PLAYER_ID) return SendClientMessage(playerid,COLOR_YELLOW,"������� ��������� /specoff."),1;
         GetParams(cmdtext,params,sizeof params);
@@ -6973,7 +6973,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
     }
     if (CommandMatch(cmdtext, "/gethere"))
     {
-        new params[48],token[24],targetid;Float:x,Float:y,Float:z;
+        new params[48],token[24],targetid; new Float:x,Float:y,Float:z;
         if(gAdmin[playerid]<3) return SendClientMessage(playerid,COLOR_RED,"/gethere �������� � 3 ������ �������������."),1;
         GetParams(cmdtext,params,sizeof params);
         if(!GetToken(params,0,token,sizeof token)) return SendClientMessage(playerid,COLOR_YELLOW,"�������������: /gethere ID"),1;

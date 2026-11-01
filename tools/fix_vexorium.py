@@ -91,15 +91,15 @@ def main() -> None:
 
     # Split the two SQL statements so Pawn's indentation checker sees the intended block.
     old_car_sql = (
-        b'    format(q,sizeof q,"INSERT OR REPLACE INTO rp_vehicles(owner,model,plate) VALUES(\\'%q\\',%d,\\'%q\\')",\n'
-        b"        gName[playerid],model,plate); VX_SQL(q);\n"
-        b'    format(q,sizeof q,"DELETE FROM rp_keys WHERE owner=\\'%q\\'",gName[playerid]); VX_SQL(q);\n'
+        b"    format(q,sizeof q,\"INSERT OR REPLACE INTO rp_vehicles(owner,model,plate) VALUES('%q',%d,'%q')\",\\n"
+        b"        gName[playerid],model,plate); VX_SQL(q);\\n"
+        b"    format(q,sizeof q,\"DELETE FROM rp_keys WHERE owner='%q'\",gName[playerid]); VX_SQL(q);\\n"
     )
     new_car_sql = (
-        b'    format(q, sizeof q, "INSERT OR REPLACE INTO rp_vehicles(owner,model,plate) VALUES(\\'%q\\',%d,\\'%q\\')", gName[playerid], model, plate);\n'
-        b"    VX_SQL(q);\n"
-        b'    format(q, sizeof q, "DELETE FROM rp_keys WHERE owner=\\'%q\\'", gName[playerid]);\n'
-        b"    VX_SQL(q);\n"
+        b"    format(q, sizeof q, \"INSERT OR REPLACE INTO rp_vehicles(owner,model,plate) VALUES('%q',%d,'%q')\", gName[playerid], model, plate);\\n"
+        b"    VX_SQL(q);\\n"
+        b"    format(q, sizeof q, \"DELETE FROM rp_keys WHERE owner='%q'\", gName[playerid]);\\n"
+        b"    VX_SQL(q);\\n"
     )
     source = replace_once(source, old_car_sql, new_car_sql, "vehicle SQL indentation")
 

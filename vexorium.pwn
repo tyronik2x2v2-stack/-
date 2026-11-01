@@ -78,7 +78,7 @@ new gLastRestTick[MAX_PLAYERS];
 new gRepairKits[MAX_PLAYERS];
 new gSimCards[MAX_PLAYERS];
 new gLockpicks[MAX_PLAYERS];
-new gMarketPickup;
+forward Float:VX_VehicleSpeedScale(vehicleid);
 new bool:gCarjackPursuitNotified[MAX_PLAYERS];
 new gPhoneSmsTarget[MAX_PLAYERS];
 new gCurrentHouse[MAX_PLAYERS];
@@ -310,8 +310,8 @@ new bool:gHudCreated[MAX_PLAYERS], bool:gVexHudBuildFailed[MAX_PLAYERS];
 new bool:gVexHudMainShown[MAX_PLAYERS], bool:gVexHudCarShown[MAX_PLAYERS];
 new bool:gVexHudEnabled[MAX_PLAYERS];
 new gVexHudFont[MAX_PLAYERS];
-new PlayerText:gVexNavCells[MAX_PLAYERS][9];
-new gVexNavCache[MAX_PLAYERS][9];
+
+
 new gHudTimer[MAX_PLAYERS];
 
 /*
@@ -3144,7 +3144,7 @@ public OnGameModeInit()
         Create3DTextLabel("{33CC66}VEXORIUM | �������\n{FFFFFF}/shop - �������", COLOR_WHITE,
             gVXMarketPos[m][0], gVXMarketPos[m][1], gVXMarketPos[m][2]+1.0, 12.0, 0, 1);
     }
-    gMarketPickup = gMarketPickups[0];
+
     // Shared stock 24/7 interior (interior 4), isolated from the street by virtual world 5500.
     gMarketInteriorCounterPickup = CreatePickup(1239, 1, VX_MARKET_COUNTER_X, VX_MARKET_COUNTER_Y, VX_MARKET_COUNTER_Z, VX_MARKET_WORLD);
     gMarketInteriorExitPickup = CreatePickup(1239, 1, VX_MARKET_EXIT_X, VX_MARKET_EXIT_Y, VX_MARKET_EXIT_Z, VX_MARKET_WORLD);
@@ -6961,7 +6961,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
     }
     if (CommandMatch(cmdtext, "/goto"))
     {
-        new params[48],token[24],targetid;Float:x,Float:y,Float:z;
+        new params[48],token[24],targetid; new Float:x,Float:y,Float:z;
         if(gAdmin[playerid]<1) return SendClientMessage(playerid,COLOR_RED,"������������ �������� �������������."),1;
         if(gVXSpec[playerid]!=INVALID_PLAYER_ID) return SendClientMessage(playerid,COLOR_YELLOW,"������� ��������� /specoff."),1;
         GetParams(cmdtext,params,sizeof params);
@@ -6973,7 +6973,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
     }
     if (CommandMatch(cmdtext, "/gethere"))
     {
-        new params[48],token[24],targetid;Float:x,Float:y,Float:z;
+        new params[48],token[24],targetid; new Float:x,Float:y,Float:z;
         if(gAdmin[playerid]<3) return SendClientMessage(playerid,COLOR_RED,"/gethere �������� � 3 ������ �������������."),1;
         GetParams(cmdtext,params,sizeof params);
         if(!GetToken(params,0,token,sizeof token)) return SendClientMessage(playerid,COLOR_YELLOW,"�������������: /gethere ID"),1;
@@ -9771,13 +9771,25 @@ stock VX_Command(playerid,const cmdtext[])
         new body[3000],row[100],name[25];
         new DBResult:r=db_query(gDatabase,"SELECT p.name,p.wanted,v.wanted_at FROM police_records p LEFT JOIN vx_players v ON v.name=p.name WHERE p.wanted>0 ORDER BY p.wanted DESC LIMIT 30");
         strcat(body,"Player\tStars (adjusted for elapsed time)\n");
-        if(r)for(new i=0;i<db_num_rows(r);i++)
+        if (r)
         {
-            db_get_field(r,0,name,sizeof name);new stars=db_get_field_int(r,1),due=db_get_field_int(r,2);
-            if(due>0 && gettime()>=due)stars=max(0,stars-1-(gettime()-due)/VX_WANTED_SECONDS);
-            if(stars>0){format(row,sizeof row,"%s\t%d\n",name,stars);strcat(body,row);}db_next_row(r);
+            for (new i = 0; i < db_num_rows(r); i++)
+            {
+                db_get_field(r, 0, name, sizeof name);
+                new stars = db_get_field_int(r, 1);
+                new due = db_get_field_int(r, 2);
+                if (due > 0 && gettime() >= due)
+                    stars = max(0, stars - 1 - (gettime() - due) / VX_WANTED_SECONDS);
+                if (stars > 0)
+                {
+                    format(row, sizeof row, "%s\t%d\n", name, stars);
+                    strcat(body, row);
+                }
+                db_next_row(r);
+            }
+            db_free_result(r);
         }
-        if(r)db_free_result(r);return VX_Show(playerid,VX_LOG,DIALOG_STYLE_TABLIST_HEADERS,"������� / FBI | ��� ������",body,"OK","�������");
+        return VX_Show(playerid,VX_LOG,DIALOG_STYLE_TABLIST_HEADERS,"������� / FBI | ��� ������",body,"OK","�������");
     }
     if(!strcmp(cmd,"/wanted",true))
     {
@@ -11270,12 +11282,17 @@ stock RP_BuyCar(playerid,model,price)
     if(!VX_Begin()) { DestroyVehicle(v); return VX_Error(playerid); }
     VX_MoneySQL(playerid,gMoney[playerid]-price,gBankMoney[playerid]);
     format(q,sizeof q,"UPDATE accounts SET ownedcar=%d WHERE name='%q'",model,gName[playerid]); VX_SQL(q);
-    format(q,sizeof q,"INSERT OR REPLACE INTO rp_vehicles(owner,model,plate) VALUES('%q',%d,'%q')",
-        gName[playerid],model,plate); VX_SQL(q);
-    format(q,sizeof q,"DELETE FROM rp_keys WHERE owner='%q'",gName[playerid]); VX_SQL(q);
-    if(!VX_Commit()) { DestroyVehicle(v); return VX_Error(playerid); }
-    if(RP_VehicleOwner(oldVehicle)==playerid)
-    { gPersonalVehicleOwner[oldVehicle]=INVALID_PLAYER_ID; DestroyVehicle(oldVehicle); }
+    format(q, sizeof q, "INSERT OR REPLACE INTO rp_vehicles(owner,model,plate) VALUES('%q',%d,'%q')",
+        gName[playerid], model, plate);
+    VX_SQL(q);
+    format(q, sizeof q, "DELETE FROM rp_keys WHERE owner='%q'", gName[playerid]);
+    VX_SQL(q);
+    if (!VX_Commit()) { DestroyVehicle(v); return VX_Error(playerid); }
+    if (RP_VehicleOwner(oldVehicle) == playerid)
+    {
+        gPersonalVehicleOwner[oldVehicle] = INVALID_PLAYER_ID;
+        DestroyVehicle(oldVehicle);
+    }
     gOwnedCarModel[playerid]=model;
     gRPCarKm[playerid]=0.0; gRPCarHealth[playerid]=1000.0; gRPCarFuel[playerid]=100;
     gRPCarRegistered[playerid]=false; gRPCarBroken[playerid]=false;

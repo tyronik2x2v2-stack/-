@@ -12150,7 +12150,7 @@ stock VX4_MechDuty(playerid, bool:enabled)
             || !IsPlayerInRangeOfPoint(playerid, 15.0, 1940.0, -1772.0, 13.4))
             return SendClientMessage(playerid, COLOR_YELLOW, "[Механик] Подойдите к мастерской, чтобы начать смену."), 1;
         if (IsPlayerInAnyVehicle(playerid) || gFaction[playerid] != FACTION_NONE)
-            return SendClientMessage(playerid, COLOR_YELLOW, "[Механик] Нельзя начать смену в машине или состоя во фракции."), 1;
+            return SendClientMessage(playerid, COLOR_YELLOW, "[Механик] Нельзя начать смену, находясь в автомобиле или состоя во фракции."), 1;
         gVX4MechDuty[playerid] = true;
         SendClientMessage(playerid, COLOR_GREEN, "[Механик] Вы вышли на смену. Принимайте заявки: /mechaccept ID.");
     }
@@ -12243,13 +12243,13 @@ stock VX4_MechFix(mechanic)
     if (gMoney[customer] < 1500)
         return SendClientMessage(mechanic, COLOR_YELLOW, "[Механик] У клиента недостаточно средств: ремонт стоит 1500 руб."), 1;
     if (gMoney[mechanic] > MAX_MONEY - 1000)
-        return SendClientMessage(mechanic, COLOR_RED, "[Механик] У вас недостаточно места для получения оплаты."), 1;
+        return SendClientMessage(mechanic, COLOR_RED, "[Механик] Ваш баланс слишком велик для получения оплаты."), 1;
     if (!TakeCash(customer, 1500))
         return SendClientMessage(mechanic, COLOR_RED, "[Механик] Не удалось списать деньги клиента."), 1;
     if (!GiveCash(mechanic, 1000))
     {
         GiveCash(customer, 1500);
-        return SendClientMessage(mechanic, COLOR_RED, "[Механик] Ошибка выдачи оплаты. Деньги возвращены клиенту."), 1;
+        return SendClientMessage(mechanic, COLOR_RED, "[Механик] Не удалось начислить оплату. Деньги возвращены клиенту."), 1;
     }
     RepairVehicle(vehicle);
     SetVehicleHealth(vehicle, 1000.0);
@@ -12393,7 +12393,7 @@ stock VX4_BizClockIn(playerid)
 {
     new salary = 0, business = VX4_BizEmployee(playerid, salary);
     if (!business)
-        return SendClientMessage(playerid, COLOR_RED, "[Бизнес] Начать смену можно только рядом с вашим бизнесом."), 1;
+        return SendClientMessage(playerid, COLOR_RED, "[Бизнес] Вы не устроены ни в один бизнес."), 1;
     if (!VX4_BizNear(playerid, business, 12.0))
         return SendClientMessage(playerid, COLOR_YELLOW, "[Бизнес] Подойдите ближе к бизнесу."), 1;
     if (gVX4BizShiftActive[playerid])
@@ -12416,7 +12416,7 @@ stock VX4_BizClockOut(playerid)
     if (gettime() - gVX4BizShiftStarted[playerid] < 60)
         return SendClientMessage(playerid, COLOR_YELLOW, "[Бизнес] Смена должна длиться не менее 60 секунд."), 1;
     if (gMoney[playerid] > MAX_MONEY - salary)
-        return SendClientMessage(playerid, COLOR_RED, "[Бизнес] Не удалось выплатить зарплату."), 1;
+        return SendClientMessage(playerid, COLOR_RED, "[Бизнес] Не удалось выплатить зарплату: превышен лимит денег."), 1;
     new q[192], till = 0;
     format(q, sizeof q, "SELECT till FROM vx_businesses WHERE id=%d", business);
     new DBResult:r = db_query(gDatabase, q);
